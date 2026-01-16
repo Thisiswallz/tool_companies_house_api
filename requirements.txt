@@ -1,0 +1,15 @@
+# Companies House Scraper - Dependencies
+
+# Core dependencies
+requests==2.31.0
+python-dotenv==1.0.0
+click==8.1.7
+
+# Optional (for progress bars)
+tqdm==4.66.1
+
+# Security and validation
+certifi==2023.11.17
+urllib3==2.1.0
+charset-normalizer==3.3.2
+idna==3.6

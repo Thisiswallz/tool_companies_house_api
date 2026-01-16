@@ -1,0 +1,10 @@
+# Example company numbers for testing
+# Format: One company number per line, comments start with #
+
+# Test companies (small, fast downloads)
+00000006
+
+# Add more companies as needed:
+# 00000007
+# SC123456
+# NI000001
