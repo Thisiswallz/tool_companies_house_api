@@ -281,14 +281,16 @@ class CompaniesHouseAPI:
                 break
             
             all_items.extend(items)
-            total = data.get('total_results', 0)
-            
+            # API can return either 'total_count' or 'total_results' depending on endpoint
+            total = data.get('total_count') or data.get('total_results', 0)
+
             logger.debug(
                 f"Fetched {len(items)} items (total so far: {len(all_items)}/{total})"
             )
-            
+
             # Check if we've fetched everything
-            if start_index + len(items) >= total:
+            # Only break if total > 0 (to avoid breaking on first page if total is missing)
+            if total > 0 and start_index + len(items) >= total:
                 logger.debug("Reached end of pagination")
                 break
             
