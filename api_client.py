@@ -288,12 +288,17 @@ class CompaniesHouseAPI:
                 f"Fetched {len(items)} items (total so far: {len(all_items)}/{total})"
             )
 
-            # Check if we've fetched everything
-            # Only break if total > 0 (to avoid breaking on first page if total is missing)
-            if total > 0 and start_index + len(items) >= total:
-                logger.debug("Reached end of pagination")
+            # Primary termination: partial page indicates end of data
+            # (more reliable than total_results which API sometimes reports as 0)
+            if len(items) < items_per_page:
+                logger.debug("Received partial page - reached end of pagination")
                 break
-            
+
+            # Secondary check: if total_results is provided and valid, use it
+            if total > 0 and len(all_items) >= total:
+                logger.debug("Reached total_results count")
+                break
+
             start_index += items_per_page
         else:
             # Loop completed without breaking (hit max iterations)

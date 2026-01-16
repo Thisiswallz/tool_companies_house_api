@@ -160,16 +160,33 @@ def scrape_company(
         for category in categories:
             (company_dir / category).mkdir(exist_ok=True)
 
-        # Fetch all JSON data
-        logger.info("Fetching company data...")
-        data = api_client.get_all_data(company_number)
+        # Check if JSON data already exists (unless --force)
+        profile_json = company_dir / "profile.json"
+        if profile_json.exists() and not options.get('force'):
+            logger.info("Using cached company data (use --force to refresh)")
+            # Load cached data
+            import json
+            data = {}
+            endpoints = [
+                'profile', 'filing_history', 'officers', 'charges',
+                'psc', 'uk_establishments', 'insolvency', 'exemptions'
+            ]
+            for endpoint in endpoints:
+                json_file = company_dir / f"{endpoint}.json"
+                if json_file.exists():
+                    with open(json_file, 'r') as f:
+                        data[endpoint] = json.load(f)
+        else:
+            # Fetch all JSON data
+            logger.info("Fetching company data...")
+            data = api_client.get_all_data(company_number)
 
-        if not data.get('profile'):
-            logger.error(f"Company not found: {company_number}")
-            return {'status': 'error', 'error': 'Company not found'}
+            if not data.get('profile'):
+                logger.error(f"Company not found: {company_number}")
+                return {'status': 'error', 'error': 'Company not found'}
 
-        # Save JSON data
-        downloader.save_json_data(data, company_dir)
+            # Save JSON data
+            downloader.save_json_data(data, company_dir)
 
         # Extract document IDs
         filing_history = data.get('filing_history', {})
@@ -228,7 +245,29 @@ def scrape_company(
         if not documents_to_download:
             logger.info("All documents already downloaded")
         else:
-            logger.info(f"Downloading {len(documents_to_download)} documents...")
+            # Check how many already exist (if not forcing re-download)
+            if not options.get('force'):
+                existing_count = sum(
+                    1 for doc in documents_to_download
+                    if downloader.check_document_exists(
+                        doc['doc_id'],
+                        company_dir / downloader.categorize_filing(doc['type'])
+                    )
+                )
+                if existing_count > 0:
+                    logger.info(
+                        f"Found {existing_count} existing files (will skip). "
+                        f"Use --force to re-download."
+                    )
+                    actual_to_download = len(documents_to_download) - existing_count
+                    if actual_to_download > 0:
+                        logger.info(f"Downloading {actual_to_download} new documents...")
+                    else:
+                        logger.info("All documents already exist")
+                else:
+                    logger.info(f"Downloading {len(documents_to_download)} documents...")
+            else:
+                logger.info(f"Downloading {len(documents_to_download)} documents (--force enabled)...")
 
             # Progress display
             if HAS_TQDM:
@@ -253,19 +292,24 @@ def scrape_company(
                 category = downloader.categorize_filing(doc['type'])
                 category_dir = company_dir / category
 
-                # Download
+                # Download (skip existing unless --force specified)
+                skip_existing = not options.get('force', False)
                 success, error = downloader.download_document(
                     doc['doc_id'],
                     doc,
                     category_dir,
-                    company_number
+                    company_number,
+                    skip_existing=skip_existing
                 )
 
                 # Update stats
                 if success:
-                    stats['success'] += 1
-                    stats['by_category'][category] = \
-                        stats['by_category'].get(category, 0) + 1
+                    if error == "already_exists":
+                        stats['skipped'] += 1
+                    else:
+                        stats['success'] += 1
+                        stats['by_category'][category] = \
+                            stats['by_category'].get(category, 0) + 1
                     downloader.update_progress(progress_file, doc['doc_id'], True)
                 else:
                     stats['failed'] += 1
@@ -289,7 +333,7 @@ def scrape_company(
         elapsed = time.time() - start_time
         logger.info(
             f"Completed in {elapsed:.1f}s - "
-            f"Success: {stats['success']}, Failed: {stats['failed']}"
+            f"Downloaded: {stats['success']}, Skipped: {stats['skipped']}, Failed: {stats['failed']}"
         )
 
         return {
@@ -324,7 +368,12 @@ def scrape_company(
 @click.option(
     '--resume',
     is_flag=True,
-    help='Resume interrupted download'
+    help='Resume interrupted download (legacy - now automatic)'
+)
+@click.option(
+    '--force',
+    is_flag=True,
+    help='Force re-download even if files already exist'
 )
 @click.option(
     '--types',
@@ -341,6 +390,7 @@ def main(
     output: Path,
     dry_run: bool,
     resume: bool,
+    force: bool,
     types: Optional[str],
     verbose: bool
 ):
@@ -348,11 +398,18 @@ def main(
 
     Download company data and documents from Companies House API.
 
+    By default, existing files are automatically skipped (smart resume).
+    Use --force to re-download everything.
+
     Examples:
 
         \b
-        # Single company
+        # Single company (skips existing files)
         python scraper.py 00000006
+
+        \b
+        # Force re-download everything
+        python scraper.py 00000006 --force
 
         \b
         # Multiple companies
@@ -367,12 +424,8 @@ def main(
         python scraper.py 00000006 --types accounts,confirmations --verbose
 
         \b
-        # Dry run
+        # Dry run (preview without downloading)
         python scraper.py 00000006 --dry-run
-
-        \b
-        # Resume interrupted download
-        python scraper.py 00000006 --resume
     """
     # Load environment variables
     load_dotenv()
@@ -422,6 +475,7 @@ def main(
     options = {
         'dry_run': dry_run,
         'resume': resume,
+        'force': force,
         'types': types,
         'verbose': verbose
     }

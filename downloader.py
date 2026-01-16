@@ -191,8 +191,39 @@ class DocumentDownloader:
 
         return os.path.getsize(output_path)
 
+    def check_document_exists(self, doc_id: str, category_dir: Path) -> Optional[Path]:
+        """Check if document already exists and is valid.
+
+        Args:
+            doc_id: Document ID
+            category_dir: Category directory to search
+
+        Returns:
+            Path to existing file if found and valid, None otherwise
+        """
+        # Search for any PDF containing this doc_id
+        for pdf_file in category_dir.glob("*.pdf"):
+            # Check if metadata exists and contains this doc_id
+            meta_file = pdf_file.with_suffix('.meta.json')
+            if meta_file.exists():
+                try:
+                    import json
+                    with open(meta_file, 'r') as f:
+                        metadata = json.load(f)
+                    if metadata.get('document_id') == doc_id:
+                        # Validate PDF integrity
+                        if pdf_file.stat().st_size > 0:
+                            with open(pdf_file, 'rb') as f:
+                                magic = f.read(4)
+                                if magic.startswith(b'%PDF'):
+                                    return pdf_file
+                except Exception:
+                    continue
+        return None
+
     def download_document(self, doc_id: str, doc_info: Dict[str, Any],
-                          category_dir: Path, company_number: str) -> Tuple[bool, Optional[str]]:
+                          category_dir: Path, company_number: str,
+                          skip_existing: bool = True) -> Tuple[bool, Optional[str]]:
         """Download PDF and XBRL (if available).
 
         Args:
@@ -200,10 +231,18 @@ class DocumentDownloader:
             doc_info: Document metadata
             category_dir: Category output directory
             company_number: Company number
+            skip_existing: If True, skip if valid file already exists
 
         Returns:
             Tuple of (success, error_message)
         """
+        # Check if document already exists
+        if skip_existing:
+            existing_file = self.check_document_exists(doc_id, category_dir)
+            if existing_file:
+                logger.debug(f"Skipping existing file: {existing_file.name}")
+                return True, "already_exists"
+
         try:
             # Get metadata first
             metadata_url = f"/document/{doc_id}"
