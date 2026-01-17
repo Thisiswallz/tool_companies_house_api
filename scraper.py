@@ -10,10 +10,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 
 import click
-from dotenv import load_dotenv
 
 from api_client import CompaniesHouseAPI
+from config import API_KEY, CATEGORY_NAMES
 from downloader import DocumentDownloader
+from logging_filter import SensitiveDataFilter
+from utils import load_json_file
 from validators import validate_company_number
 
 
@@ -23,39 +25,6 @@ try:
     HAS_TQDM = True
 except ImportError:
     HAS_TQDM = False
-
-
-class SensitiveDataFilter(logging.Filter):
-    """Redact API keys and other sensitive data from logs."""
-
-    def filter(self, record):
-        """Filter log record to redact sensitive data.
-
-        Args:
-            record: Log record
-
-        Returns:
-            True to keep record
-        """
-        # Redact anything that looks like an API key (alphanumeric 20+ chars)
-        if isinstance(record.msg, str):
-            record.msg = re.sub(
-                r'[A-Za-z0-9_-]{20,}',
-                '***REDACTED***',
-                record.msg
-            )
-
-        # Also check args
-        if record.args:
-            sanitized_args = []
-            for arg in record.args:
-                if isinstance(arg, str) and len(arg) >= 20:
-                    sanitized_args.append('***REDACTED***')
-                else:
-                    sanitized_args.append(arg)
-            record.args = tuple(sanitized_args)
-
-        return True
 
 
 def setup_logging(output_dir: Path, verbose: bool = False) -> logging.Logger:
@@ -155,9 +124,7 @@ def scrape_company(
         company_dir.mkdir(parents=True, exist_ok=True)
 
         # Create category directories
-        categories = ['accounts', 'confirmations', 'incorporation', 'changes',
-                      'mortgages', 'dissolutions', 'other']
-        for category in categories:
+        for category in CATEGORY_NAMES:
             (company_dir / category).mkdir(exist_ok=True)
 
         # Check if JSON data already exists (unless --force)
@@ -165,7 +132,6 @@ def scrape_company(
         if profile_json.exists() and not options.get('force'):
             logger.info("Using cached company data (use --force to refresh)")
             # Load cached data
-            import json
             data = {}
             endpoints = [
                 'profile', 'filing_history', 'officers', 'charges',
@@ -173,9 +139,9 @@ def scrape_company(
             ]
             for endpoint in endpoints:
                 json_file = company_dir / f"{endpoint}.json"
-                if json_file.exists():
-                    with open(json_file, 'r') as f:
-                        data[endpoint] = json.load(f)
+                endpoint_data = load_json_file(json_file)
+                if endpoint_data:
+                    data[endpoint] = endpoint_data
         else:
             # Fetch all JSON data
             logger.info("Fetching company data...")
@@ -427,9 +393,6 @@ def main(
         # Dry run (preview without downloading)
         python scraper.py 00000006 --dry-run
     """
-    # Load environment variables
-    load_dotenv()
-
     # Setup output directory
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
@@ -453,9 +416,8 @@ def main(
 
     logger.info(f"Processing {len(companies)} companies")
 
-    # Get API key
-    api_key = os.getenv('COMPANIES_HOUSE_API_KEY')
-    if not api_key:
+    # Get API key from config (already loaded from environment)
+    if not API_KEY:
         click.echo(
             "Error: COMPANIES_HOUSE_API_KEY not set",
             err=True
@@ -465,7 +427,7 @@ def main(
 
     # Initialize API client
     try:
-        api_client = CompaniesHouseAPI(api_key)
+        api_client = CompaniesHouseAPI(API_KEY)
         downloader = DocumentDownloader(api_client, output)
     except Exception as e:
         logger.error(f"Failed to initialize API client: {e}")

@@ -25,13 +25,16 @@ from collections import deque
 import requests
 from requests.auth import HTTPBasicAuth
 
+from config import (
+    DATA_API_BASE,
+    DOCUMENT_API_BASE,
+    DEFAULT_TIMEOUT,
+    DEFAULT_ITEMS_PER_PAGE,
+    MAX_PAGINATION_ITERATIONS,
+    MAX_REQUESTS,
+    RATE_WINDOW_SECONDS
+)
 from validators import validate_api_key, validate_company_number
-
-
-# Constants
-DEFAULT_TIMEOUT = 30  # seconds
-DEFAULT_ITEMS_PER_PAGE = 100
-MAX_PAGINATION_ITERATIONS = 1000  # Safety ceiling for infinite loop prevention
 
 
 logger = logging.getLogger(__name__)
@@ -96,21 +99,16 @@ class RateLimiter:
 class CompaniesHouseAPI:
     """
     Client for Companies House Data API and Document API.
-    
+
     Provides methods for fetching company data from both APIs:
     - Data API: Company profiles, officers, filing history, etc. (JSON)
     - Document API: Document metadata and downloads (PDF/XBRL)
-    
+
     Both APIs use the same API key with HTTPBasicAuth and share a rate limiter.
-    
+
     Attributes:
-        DATA_API_BASE: Base URL for Data API
-        DOCUMENT_API_BASE: Base URL for Document API
         rate_limiter: Shared rate limiter for both APIs
     """
-
-    DATA_API_BASE = "https://api.company-information.service.gov.uk"
-    DOCUMENT_API_BASE = "https://document-api.companieshouse.gov.uk"
 
     def __init__(self, api_key: str):
         """
@@ -136,9 +134,9 @@ class CompaniesHouseAPI:
         user_agent = "CompaniesHouseScraper/1.0 (Personal Research)"
         self.data_session.headers.update({'User-Agent': user_agent})
         self.doc_session.headers.update({'User-Agent': user_agent})
-        
+
         # Shared rate limiter (600 requests per 5 minutes across BOTH APIs)
-        self.rate_limiter = RateLimiter(max_requests=600, window_seconds=300)
+        self.rate_limiter = RateLimiter(max_requests=MAX_REQUESTS, window_seconds=RATE_WINDOW_SECONDS)
         
         logger.info("CompaniesHouseAPI client initialized")
 
@@ -163,8 +161,8 @@ class CompaniesHouseAPI:
             requests.HTTPError: For HTTP errors (4xx, 5xx)
         """
         self.rate_limiter.wait_if_needed()
-        
-        url = f"{self.DATA_API_BASE}{endpoint}"
+
+        url = f"{DATA_API_BASE}{endpoint}"
         logger.debug(f"Data API GET: {endpoint}")
         
         # Set default timeout if not provided
@@ -215,8 +213,8 @@ class CompaniesHouseAPI:
             requests.HTTPError: For HTTP errors (4xx, 5xx)
         """
         self.rate_limiter.wait_if_needed()
-        
-        url = f"{self.DOCUMENT_API_BASE}{endpoint}"
+
+        url = f"{DOCUMENT_API_BASE}{endpoint}"
         logger.debug(f"Document API GET: {endpoint}")
         
         # Set default timeout if not provided

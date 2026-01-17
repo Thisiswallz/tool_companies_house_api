@@ -11,22 +11,12 @@ from typing import Dict, List, Any, Optional, Tuple
 
 import requests
 
+from config import FILING_CATEGORIES
+from utils import save_json_file
 from validators import sanitize_filename, safe_output_path
 
 
 logger = logging.getLogger(__name__)
-
-
-# Filing type categorization map
-FILING_CATEGORIES = {
-    'accounts': ['AA', 'AC', 'Annual Return', 'Annual Accounts', 'accounts'],
-    'confirmations': ['CS01', 'Confirmation Statement', 'confirmation'],
-    'incorporation': ['IN01', 'incorporation', 'articles', 'certificate'],
-    'changes': ['CH01', 'CH02', 'CH03', 'TM01', 'TM02', 'AP01', 'change'],
-    'mortgages': ['MR01', 'MR02', 'MR04', 'mortgage', 'charge'],
-    'dissolutions': ['DS01', 'DS02', 'dissolution'],
-    'other': []  # Catch-all
-}
 
 
 class DocumentDownloader:
@@ -111,7 +101,9 @@ class DocumentDownloader:
         max_bytes = max_size_mb * 1024 * 1024
 
         try:
-            response = self.api._doc_get(url, stream=True, timeout=30)
+            # Set Accept header to request PDF format (not iXBRL)
+            headers = {'Accept': expected_type}
+            response = self.api._doc_get(url, stream=True, timeout=30, headers=headers)
             response.raise_for_status()
 
             # Validate content type
@@ -547,6 +539,4 @@ class DocumentDownloader:
             if endpoint_data:
                 filename = f"{endpoint}.json"
                 filepath = output_dir / filename
-                with open(filepath, 'w') as f:
-                    json.dump(endpoint_data, f, indent=2)
-                logger.debug(f"Saved {filename}")
+                save_json_file(filepath, endpoint_data)

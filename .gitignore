@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Private development documentation (CRITICAL: Never commit)
+.private/
+
 # Downloads and data
 downloads/
 data/
